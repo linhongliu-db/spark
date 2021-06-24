@@ -849,12 +849,7 @@ class SessionCatalog(
   private def buildViewDDL(metadata: CatalogTable): String = {
     val viewName = metadata.identifier.toString
     val viewText = metadata.viewText.get
-    val viewColumns = if (metadata.schema.fieldNames.toSeq == metadata.viewQueryColumnNames) {
-      ""
-    } else {
-      s"(${metadata.schema.fieldNames.mkString(", ")})"
-    }
-    s"ALTER VIEW $viewName $viewColumns AS $viewText"
+    s"ALTER VIEW $viewName AS $viewText"
   }
 
   private def fromCatalogTable(metadata: CatalogTable, isTempView: Boolean): View = {
