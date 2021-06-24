@@ -375,6 +375,53 @@ abstract class SQLViewTestSuite extends QueryTest with SQLTestUtils {
       }
     }
   }
+
+  test("SPARK-35685: Prompt recreating view message") {
+    withTable("t") {
+      sql("CREATE TABLE t(i INT, j INT) USING json")
+      val viewName = createView("v", "SELECT * FROM t")
+      withView(viewName) {
+        sql("SELECT * FROM v").show()
+        sql("DROP TABLE t")
+        sql("CREATE TABLE t(a INT, b INT) USING json")
+        sql("ALTER VIEW `v`  AS SELECT * FROM t")
+        sql("SELECT * FROM v").show()
+      }
+    }
+  }
+
+  test("SPARK-35685: Prompt recreating view message with user specified columns") {
+    withTable("t") {
+      sql("CREATE TABLE t(i INT, j INT) USING json")
+      val viewName = createView("v", "SELECT * FROM t", Seq("m", "n"))
+      withView(viewName) {
+        sql("SELECT * FROM v").show()
+        sql("DROP TABLE t")
+        sql("CREATE TABLE t(a INT, b INT) USING json")
+        sql("ALTER VIEW `v` AS SELECT * FROM t")
+        sql("SELECT * FROM v").show()
+      }
+    }
+  }
+
+  test("SPARK-35685: Prompt recreating view message with column in sql text") {
+    withTable("t") {
+      sql("CREATE TABLE t(i INT, j INT) USING json")
+      val viewName = createView("v", "SELECT i FROM t")
+      withView(viewName) {
+        sql("SELECT * FROM v").show()
+        sql("DROP TABLE t")
+        sql("CREATE TABLE t(a INT, b INT) USING json")
+//        sql("ALTER VIEW `v` AS SELECT * FROM t")
+        // Here the exception will be cannot find column i among a, b
+        // this is because the table column changed and sql text resolved failed.
+        // this means if sql text resolved pass. and the column name mismatch. the column
+        // name is changed by spark itself because sql text and table columns are not changed.
+        // so re-create the column names should be safe.
+        sql("SELECT * FROM v").show()
+      }
+    }
+  }
 }
 
 class LocalTempViewTestSuite extends SQLViewTestSuite with SharedSparkSession {

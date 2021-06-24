@@ -846,12 +846,15 @@ class SessionCatalog(
     case None => fromCatalogTable(viewInfo.tableMeta, isTempView = true)
   }
 
-  private def buildViewDDL(metadata: CatalogTable, isTempView: Boolean): String = {
-    val temp = if (isTempView) "TEMP" else ""
+  private def buildViewDDL(metadata: CatalogTable): String = {
     val viewName = metadata.identifier.toString
-    val viewText = metadata.viewText
-    val viewColumns = metadata.schema.fieldNames.mkString(", ")
-    s"CREATE OR REPLACE $temp VIEW $viewName ($viewColumns) AS $viewText"
+    val viewText = metadata.viewText.get
+    val viewColumns = if (metadata.schema.fieldNames.toSeq == metadata.viewQueryColumnNames) {
+      ""
+    } else {
+      s"(${metadata.schema.fieldNames.mkString(", ")})"
+    }
+    s"ALTER VIEW $viewName $viewColumns AS $viewText"
   }
 
   private def fromCatalogTable(metadata: CatalogTable, isTempView: Boolean): View = {
@@ -888,7 +891,7 @@ class SessionCatalog(
     }
     val nameToCounts = viewColumnNames.groupBy(normalizeColName).mapValues(_.length)
     val nameToCurrentOrdinal = scala.collection.mutable.HashMap.empty[String, Int]
-    val viewDDL = buildViewDDL(metadata, isTempView)
+    val viewDDL = buildViewDDL(metadata)
 
     val projectList = viewColumnNames.zip(metadata.schema).map { case (name, field) =>
       val normalizedName = normalizeColName(name)
