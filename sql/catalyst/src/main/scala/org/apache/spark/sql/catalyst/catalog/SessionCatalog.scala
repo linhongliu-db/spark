@@ -862,6 +862,13 @@ class SessionCatalog(
     }
   }
 
+  private def isHiveCreatedView(metadata: CatalogTable): Boolean = {
+    // For views created by hive without explicit column names, there will be auto-generated
+    // column names like "_c0", "_c1", "_c2"...
+    metadata.viewQueryColumnNames.isEmpty &&
+      metadata.schema.fieldNames.exists(_.matches("_c[0-9]+"))
+  }
+
   private def fromCatalogTable(metadata: CatalogTable, isTempView: Boolean): View = {
     val viewText = metadata.viewText.getOrElse {
       throw new IllegalStateException("Invalid view without text.")
@@ -898,14 +905,24 @@ class SessionCatalog(
     val nameToCurrentOrdinal = scala.collection.mutable.HashMap.empty[String, Int]
     val viewDDL = buildViewDDL(metadata, isTempView)
 
-    val projectList = viewColumnNames.zip(metadata.schema).map { case (name, field) =>
-      val normalizedName = normalizeColName(name)
-      val count = nameToCounts(normalizedName)
-      val ordinal = nameToCurrentOrdinal.getOrElse(normalizedName, 0)
-      nameToCurrentOrdinal(normalizedName) = ordinal + 1
-      val col = GetViewColumnByNameAndOrdinal(
-        metadata.identifier.toString, name, ordinal, count, viewDDL)
-      Alias(UpCast(col, field.dataType), field.name)(explicitMetadata = Some(field.metadata))
+    val projectList = if (!isHiveCreatedView(metadata)) {
+      viewColumnNames.zip(metadata.schema).map { case (name, field) =>
+        val normalizedName = normalizeColName(name)
+        val count = nameToCounts(normalizedName)
+        val ordinal = nameToCurrentOrdinal.getOrElse(normalizedName, 0)
+        nameToCurrentOrdinal(normalizedName) = ordinal + 1
+        val col = GetViewColumnByNameAndOrdinal(
+          metadata.identifier.toString, name, ordinal, count, viewDDL)
+        Alias(UpCast(col, field.dataType), field.name)(explicitMetadata = Some(field.metadata))
+      }
+    } else {
+      // For view created by hive, the parsed view plan may have different output columns with
+      // the schema stored in metadata. For example: `CREATE VIEW v AS SELECT 1 FROM t`
+      // the schema in metadata will be `_c0` while the parsed view plan has column named `1`
+      metadata.schema.zipWithIndex.map { case (field, index) =>
+        val col = GetColumnByOrdinal(index, field.dataType)
+        Alias(col, field.name)(explicitMetadata = Some(field.metadata))
+      }
     }
     View(desc = metadata, isTempView = isTempView, child = Project(projectList, parsedPlan))
   }
