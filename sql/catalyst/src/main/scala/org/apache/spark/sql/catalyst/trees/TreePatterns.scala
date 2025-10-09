@@ -149,6 +149,7 @@ object TreePattern extends Enumeration  {
   val LIMIT: Value = Value
   val LOCAL_RELATION: Value = Value
   val LOGICAL_QUERY_STAGE: Value = Value
+  val METRIC_VIEW_PLACEHOLDER: Value = Value
   val NATURAL_LIKE_JOIN: Value = Value
   val OFFSET: Value = Value
   val OUTER_JOIN: Value = Value
@@ -161,6 +162,7 @@ object TreePattern extends Enumeration  {
   val RELATION_TIME_TRAVEL: Value = Value
   val REPARTITION_OPERATION: Value = Value
   val REBALANCE_PARTITIONS: Value = Value
+  val RESOLVED_METRIC_VIEW: Value = Value
   val SERIALIZE_FROM_OBJECT: Value = Value
   val SORT: Value = Value
   val SQL_TABLE_FUNCTION: Value = Value
