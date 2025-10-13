@@ -19,11 +19,44 @@ package org.apache.spark.sql.metricview.serde.canonical
 
 import scala.util.{Success, Try}
 
+import org.apache.spark.sql.metricview.serde.canonical.ColumnType.ColumnType
+import org.apache.spark.sql.metricview.serde.common.Constants
+import org.apache.spark.sql.metricview.serde.json.ColumnMetadata
+
 case class Column[T <: Expression](
     name: String,
     expression: T,
     ordinal: Int) extends Validatable {
   override def validate(): Try[Unit] = {
     Success(())
+  }
+
+  def columnType: ColumnType = expression match {
+    case _: DimensionExpression => ColumnType.Dimension
+    case _: MeasureExpression => ColumnType.Measure
+    case _ =>
+      throw MetricViewValidationException(
+        s"Unsupported expression type: ${expression.getClass.getName}"
+      )
+  }
+
+  def getColumnMetadata: ColumnMetadata = {
+    val truncatedExpr = expression.expr.take(Constants.MAXIMUM_PROPERTY_SIZE)
+    ColumnMetadata(columnType.toString, truncatedExpr)
+  }
+}
+
+object ColumnType extends Enumeration {
+  type ColumnType = Value
+  val Dimension: ColumnType = Value("dimension")
+  val Measure: ColumnType = Value("measure")
+
+  // Method to match case-insensitively and return the correct value
+  def fromString(columnType: String): ColumnType = {
+    values.find(_.toString.equalsIgnoreCase(columnType)).getOrElse {
+      throw MetricViewFromProtoException(
+        s"Unsupported column type: $columnType"
+      )
+    }
   }
 }

@@ -17,18 +17,14 @@
 
 package org.apache.spark.sql.execution.command
 
-import org.apache.spark.SparkException
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.{QueryPlanningTracker, TableIdentifier}
-import org.apache.spark.sql.catalyst.analysis.{ResolvedIdentifier, SchemaUnsupported, UnresolvedRelation}
+import org.apache.spark.sql.catalyst.analysis.{ResolvedIdentifier, SchemaUnsupported}
 import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, CatalogTable, CatalogTableType}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
-import org.apache.spark.sql.catalyst.parser.ParserInterface
-import org.apache.spark.sql.catalyst.plans.logical.{Filter, IgnoreCachedData, LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.logical.{IgnoreCachedData, LogicalPlan}
 import org.apache.spark.sql.errors.QueryCompilationErrors
-import org.apache.spark.sql.metricview.logical.MetricViewPlaceholder
-import org.apache.spark.sql.metricview.serde.MetricViewFactory
-import org.apache.spark.sql.metricview.serde.canonical.{AssetSource, MetricView, MetricViewValidationException, MetricViewYAMLParsingException, SQLSource}
+import org.apache.spark.sql.metricview.util.MetricViewPlanner
 import org.apache.spark.sql.types.{StringType, StructType}
 
 case class CreateMetricViewCommand(
@@ -90,46 +86,10 @@ object MetricViewHelper {
     val tableMeta = CatalogTable(identifier = name, tableType = CatalogTableType.METRIC_VIEW,
       storage = CatalogStorageFormat.empty, schema = new StructType(),
       viewOriginalText = Some(viewText), viewText = Some(viewText))
-    val metricViewNode = planV2Write(tableMeta, viewText, session.sessionState.sqlParser)
+    val metricViewNode = MetricViewPlanner.planWrite(
+      tableMeta, viewText, session.sessionState.sqlParser)
     val analyzed = analyzer.executeAndCheck(metricViewNode, new QueryPlanningTracker)
     ViewHelper.verifyTemporaryObjectsNotExists(isTemporary = false, name, analyzed, Seq.empty)
     analyzed
-  }
-
-  private def planV2Write(
-      metadata: CatalogTable,
-      yaml: String,
-      sqlParser: ParserInterface): MetricViewPlaceholder = {
-    val (metricView, dataModelPlan) = parseYAML(yaml, sqlParser)
-    MetricViewPlaceholder(
-      metadata,
-      metricView,
-      Seq.empty,
-      dataModelPlan,
-      isCreate = true
-    )
-  }
-
-  private def parseYAML(
-      yaml: String,
-      sqlParser: ParserInterface): (MetricView, LogicalPlan) = {
-    val metricView = try {
-      MetricViewFactory.fromYAML(yaml)
-    } catch {
-      case e: MetricViewValidationException =>
-        throw QueryCompilationErrors.invalidLiteralForWindowDurationError()
-      case e: MetricViewYAMLParsingException =>
-        throw QueryCompilationErrors.invalidLiteralForWindowDurationError()
-    }
-    val source = metricView.from match {
-      case asset: AssetSource => UnresolvedRelation(sqlParser.parseTableIdentifier(asset.name))
-      case sqlSource: SQLSource => sqlParser.parsePlan(sqlSource.sql)
-      case _ => throw SparkException.internalError("Either SQLSource or AssetSource")
-    }
-    // Compute filter here because all necessary information is available.
-    val parsedPlan = metricView.where.map { cond =>
-      Filter(sqlParser.parseExpression(cond), source)
-    }.getOrElse(source)
-    (metricView, parsedPlan)
   }
 }

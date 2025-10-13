@@ -38,11 +38,22 @@ class MetricViewSuite extends QueryTest with SQLTestUtils with SharedSparkSessio
   }
 
   test("basic") {
+    val sparkSession = this.spark
+    import sparkSession.implicits._
     val metricViewColumns = Seq(
       Column("d1", DimensionExpression("upper(a)"), 0),
-      Column("m1", MeasureExpression("sum(a)"), 1)
+      Column("m1", MeasureExpression("sum(b)"), 1)
     )
-    val metricView = MetricView("0.1", AssetSource("my_table"), Some("a > 1"), metricViewColumns)
+    Seq(
+      "x" -> 1,
+      "x" -> 2,
+      "y" -> 3,
+      "y" -> 4
+    ).toDF("a", "b").write.mode("overwrite").saveAsTable("my_table")
+    val metricView = MetricView("0.1", AssetSource("my_table"), Some("b > 1"), metricViewColumns)
     createMetricView(metricView)
+    val df = sql("select d1, sum(m1) from my_metric_view group by d1")
+    df.explain(true)
+    df.show(false)
   }
 }

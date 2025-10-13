@@ -789,7 +789,7 @@ object ViewHelper extends SQLConfHelper with Logging with CapturesConfig {
 
     CatalogTable(
       identifier = name,
-      tableType = CatalogTableType.VIEW,
+      tableType = if (isMetricView) CatalogTableType.METRIC_VIEW else CatalogTableType.VIEW,
       storage = CatalogStorageFormat.empty,
       schema = aliasedSchema,
       properties = newProperties,
