@@ -49,6 +49,7 @@ import org.apache.spark.sql.connector.catalog.CatalogManager.SESSION_CATALOG_NAM
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.StaticSQLConf.GLOBAL_TEMP_DATABASE
+import org.apache.spark.sql.metricview.util.MetricViewPlanner
 import org.apache.spark.sql.types.{MetadataBuilder, StructField, StructType}
 import org.apache.spark.sql.util.{CaseInsensitiveStringMap, PartitioningUtils}
 import org.apache.spark.util.ArrayImplicits._
@@ -948,8 +949,31 @@ class SessionCatalog(
       // 1. Add a [[View]] operator over the relation to keep track of the view desc;
       // 2. Wrap the logical plan in a [[SubqueryAlias]] which tracks the name of the view.
       SubqueryAlias(multiParts, fromCatalogTable(metadata, isTempView = false))
+    } else if (metadata.tableType == CatalogTableType.METRIC_VIEW) {
+      parseMetricViewDefinition(metadata)
     } else {
       SubqueryAlias(multiParts, UnresolvedCatalogRelation(metadata, options))
+    }
+  }
+
+  private def parseMetricViewDefinition(metadata: CatalogTable): LogicalPlan = {
+    val viewDefinition = metadata.viewText.getOrElse {
+      throw SparkException.internalError("Invalid view without text.")
+    }
+    val viewConfigs = metadata.viewSQLConfigs
+    val origin = CurrentOrigin.get.copy(
+      objectType = Some("METRIC VIEW"),
+      objectName = Some(metadata.qualifiedName)
+    )
+    SQLConf.withExistingConf(
+      View.effectiveSQLConf(
+        configs = viewConfigs,
+        isTempView = false
+      )
+    ) {
+      CurrentOrigin.withOrigin(origin) {
+        MetricViewPlanner.planRead(metadata, viewDefinition, parser, metadata.schema)
+      }
     }
   }
 
